@@ -1,0 +1,56 @@
+name: Deploy Milvus on EKS
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  create-eks-cluster:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  
+  deploy-milvus:
+    runs-on: ubuntu-latest
+    needs: create-eks-cluster
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: Get kubeconfig
+        run: aws eks update-kubeconfig --name my-eks-cluster --region ${{ secrets.AWS_REGION }}
+      
+      - name: Deploy Milvus using Helm
+        run: |
+          helm repo add milvus https://milvus-io.github.io/milvus-helm/
+          helm repo update
+          helm install milvus milvus/milvus --namespace milvus --create-namespace
+
